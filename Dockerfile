@@ -3,13 +3,42 @@
 FROM runpod/comfyui:latest
 
 # ---------------------------------------------------------------------------
-# System deps + Node.js 20 (required for ai-toolkit UI)
+# System tools — the stuff you always need when SSHed into a pod
 # ---------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    # editors
+    nano \
+    vim \
+    # process / network inspection
+    lsof \
+    iproute2 \
+    net-tools \
+    iputils-ping \
+    procps \
+    # file tools
+    tree \
+    jq \
+    unzip \
+    zip \
+    rsync \
+    pv \
+    # build essentials
     git \
     curl \
+    wget \
     ca-certificates \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    build-essential \
+    # misc
+    htop \
+    tmux \
+    screen \
+    less \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------------------------
+# Node.js 20 (required for ai-toolkit UI)
+# ---------------------------------------------------------------------------
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
@@ -46,15 +75,14 @@ RUN /opt/ai-toolkit-venv/bin/pip install --no-cache-dir \
     torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 \
     --index-url https://download.pytorch.org/whl/cu128
 
-# ai-toolkit Python requirements + gradio for flux_train_ui.py fallback
+# ai-toolkit Python requirements + gradio
 RUN /opt/ai-toolkit-venv/bin/pip install --no-cache-dir \
     -r /opt/ai-toolkit/requirements.txt
 
 RUN /opt/ai-toolkit-venv/bin/pip install --no-cache-dir --upgrade \
     accelerate transformers diffusers huggingface_hub gradio
 
-# Build the Next.js UI — output goes to ui/.next/
-# Also init the prisma DB schema
+# Build the Next.js UI
 RUN cd /opt/ai-toolkit/ui \
     && npm install \
     && npx prisma generate \
