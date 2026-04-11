@@ -36,10 +36,19 @@ setup_ssh() {
   fi
 
   if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
+    # Handle both raw and base64-encoded keys
+    if echo "$SSH_PRIVATE_KEY" | grep -q "BEGIN OPENSSH"; then
+      # Raw key — write directly, restoring newlines if spaces were used
+      echo "$SSH_PRIVATE_KEY" | tr ' ' '\n' \
+        | sed 's/^BEGIN.*/-----BEGIN OPENSSH PRIVATE KEY-----/' \
+        | sed 's/^END.*/-----END OPENSSH PRIVATE KEY-----/' \
+        > ~/.ssh/id_ed25519
+    else
       echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/id_ed25519
-      chmod 600 ~/.ssh/id_ed25519
-      ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
-      log "SSH: private key installed from SSH_PRIVATE_KEY"
+    fi
+    chmod 600 ~/.ssh/id_ed25519
+    ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+    log "SSH: private key installed"
   fi
   
   grep -q "^PermitUserEnvironment yes" /etc/ssh/sshd_config \
