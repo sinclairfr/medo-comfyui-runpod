@@ -38,15 +38,15 @@ RUN git clone --depth=1 https://github.com/ostris/ai-toolkit.git /opt/ai-toolkit
     && cd /opt/ai-toolkit \
     && git submodule update --init --recursive
 
-# Isolated Python venv for ai-toolkit
+# Isolated Python venv — no system-site-packages to avoid version conflicts
 RUN python3 -m venv /opt/ai-toolkit-venv
 
-# Install torch first (cu128 to match base image)
+# torch 2.7.0 is the first version with cu128 wheels on PyTorch CDN
 RUN /opt/ai-toolkit-venv/bin/pip install --no-cache-dir \
-    torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
+    torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 \
     --index-url https://download.pytorch.org/whl/cu128
 
-# Install ai-toolkit Python requirements
+# ai-toolkit Python requirements
 RUN /opt/ai-toolkit-venv/bin/pip install --no-cache-dir \
     -r /opt/ai-toolkit/requirements.txt
 
@@ -54,7 +54,7 @@ RUN /opt/ai-toolkit-venv/bin/pip install --no-cache-dir \
 RUN /opt/ai-toolkit-venv/bin/pip install --no-cache-dir --upgrade \
     accelerate transformers diffusers huggingface_hub
 
-# Build the Node.js UI
+# Build the Node.js UI (output: ui/dist/)
 RUN cd /opt/ai-toolkit/ui && npm install && npm run build
 
 # ---------------------------------------------------------------------------
