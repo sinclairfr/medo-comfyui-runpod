@@ -86,10 +86,9 @@ start_s3_offloader() {
 }
 
 # ---------------------------------------------------------------------------
-# ai-toolkit
-# Code at /opt/ai-toolkit (baked in image)
+# ai-toolkit UI (Next.js, port 8675)
+# Code baked in image at /opt/ai-toolkit
 # User data (configs, datasets, output) on volume at /workspace/ai-toolkit
-# Workspace dirs are symlinked into the code tree so the UI finds them
 # ---------------------------------------------------------------------------
 start_ai_toolkit() {
   if [[ ! -d "${ATK_CODE}" ]]; then
@@ -97,9 +96,15 @@ start_ai_toolkit() {
     return
   fi
 
-  # Set up workspace dirs on the persistent volume and symlink into code tree
+  if [[ ! -d "${ATK_CODE}/ui/.next" ]]; then
+    log "ai-toolkit: ui/.next not found — Next.js build may have failed"
+    return
+  fi
+
+  # Ensure workspace dirs exist on the persistent volume
   for dir in config datasets output jobs; do
     mkdir -p "${ATK_WORKSPACE}/${dir}"
+    # Symlink into code tree if not already there
     if [[ ! -e "${ATK_CODE}/${dir}" ]]; then
       ln -s "${ATK_WORKSPACE}/${dir}" "${ATK_CODE}/${dir}"
     elif [[ ! -L "${ATK_CODE}/${dir}" ]]; then
@@ -108,13 +113,17 @@ start_ai_toolkit() {
     fi
   done
 
-  # Point ai-toolkit to its own Python venv via env var
+  # Prisma DB lives on the persistent volume
+  mkdir -p "${ATK_WORKSPACE}"
+  export DATABASE_URL="file:${ATK_WORKSPACE}/aitk_db.db"
+
+  # Point ai-toolkit to its isolated Python venv
   export AI_TOOLKIT_PYTHON="${ATK_VENV}/bin/python"
 
-  # Launch the Node.js UI server (port 8675)
+  # Next.js start — runs the pre-built .next app + the cron worker
   log "ai-toolkit: starting UI on port 8675..."
-  cd "${ATK_CODE}"
-  nohup node ui/dist/server/entry.mjs \
+  cd "${ATK_CODE}/ui"
+  nohup npm run start \
     >> "${ATK_WORKSPACE}/server.log" 2>&1 &
   log "ai-toolkit: UI started (PID $!), logs → ${ATK_WORKSPACE}/server.log"
   cd - >/dev/null
@@ -133,8 +142,10 @@ case "${RUN_AI_TOOLKIT,,}" in
   *) log "ai-toolkit: disabled (RUN_AI_TOOLKIT=${RUN_AI_TOOLKIT})" ;;
 esac
 
-# Expose ComfyUI venv so ComfyUI-Manager finds pip at prestartup
-export PATH="${COMFYUI_VENV}/bin:$PATH"
+# Expose ComfyUI venv bin so ComfyUI-Manager finds pip at prestartup
+export PATH="${COMFYUI_VENV}/bin:${PATH}"
+# Also write it to /etc/environment so /start.sh child processes inherit it
+echo "PATH=${COMFYUI_VENV}/bin:${PATH}" >> /etc/environment
 
 log "Handing off to /start.sh..."
 exec /start.sh
