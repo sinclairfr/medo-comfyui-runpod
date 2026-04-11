@@ -35,6 +35,12 @@ setup_ssh() {
     log "SSH: random root password: ${RANDOM_PASS}"
   fi
 
+  if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
+    echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/id_ed25519
+    chmod 600 ~/.ssh/id_ed25519
+    log "SSH: private key installed from SSH_PRIVATE_KEY"
+  fi
+
   grep -q "^PermitUserEnvironment yes" /etc/ssh/sshd_config \
     || echo "PermitUserEnvironment yes" >> /etc/ssh/sshd_config
 }
