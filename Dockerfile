@@ -38,24 +38,27 @@ RUN git clone --depth=1 https://github.com/ostris/ai-toolkit.git /opt/ai-toolkit
     && cd /opt/ai-toolkit \
     && git submodule update --init --recursive
 
-# Isolated Python venv — no system-site-packages to avoid version conflicts
+# Isolated Python venv for ai-toolkit
 RUN python3 -m venv /opt/ai-toolkit-venv
 
-# torch 2.7.0 is the first version with cu128 wheels on PyTorch CDN
+# torch 2.7.0 — first version with cu128 wheels
 RUN /opt/ai-toolkit-venv/bin/pip install --no-cache-dir \
     torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 \
     --index-url https://download.pytorch.org/whl/cu128
 
-# ai-toolkit Python requirements
+# ai-toolkit Python requirements + gradio for flux_train_ui.py fallback
 RUN /opt/ai-toolkit-venv/bin/pip install --no-cache-dir \
     -r /opt/ai-toolkit/requirements.txt
 
-# Upgrade key packages for compatibility
 RUN /opt/ai-toolkit-venv/bin/pip install --no-cache-dir --upgrade \
-    accelerate transformers diffusers huggingface_hub
+    accelerate transformers diffusers huggingface_hub gradio
 
-# Build the Node.js UI (output: ui/dist/)
-RUN cd /opt/ai-toolkit/ui && npm install && npm run build
+# Build the Next.js UI — output goes to ui/.next/
+# Also init the prisma DB schema
+RUN cd /opt/ai-toolkit/ui \
+    && npm install \
+    && npx prisma generate \
+    && npm run build
 
 # ---------------------------------------------------------------------------
 # Wrapper
