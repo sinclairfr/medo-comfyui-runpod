@@ -39,49 +39,21 @@ setup_ssh() {
     echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/id_ed25519
     chmod 600 ~/.ssh/id_ed25519
     ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
-    # Configure GitHub host entry
     if ! grep -q "Host github.com" ~/.ssh/config 2>/dev/null; then
       cat >> ~/.ssh/config << 'EOF'
-  Host github.com
-    HostName github.com
-    User git
-    IdentityFile ~/.ssh/id_ed25519
-    IdentitiesOnly yes
-  EOF
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+EOF
       chmod 600 ~/.ssh/config
     fi
     log "SSH: private key + GitHub host configured"
   fi
-  
+
   grep -q "^PermitUserEnvironment yes" /etc/ssh/sshd_config \
     || echo "PermitUserEnvironment yes" >> /etc/ssh/sshd_config
-}
-
-# ---------------------------------------------------------------------------
-# GitHub SSH
-# ---------------------------------------------------------------------------
-setup_github_ssh() {
-  if [[ -z "${GITHUB_SSH_KEY:-}" ]]; then
-    log "GitHub SSH: not set, skipping"
-    return
-  fi
-
-  mkdir -p ~/.ssh
-  echo "$GITHUB_SSH_KEY" | base64 -d > ~/.ssh/github_key
-  chmod 600 ~/.ssh/github_key
-  ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
-
-  if ! grep -q "Host github.com" ~/.ssh/config 2>/dev/null; then
-    cat >> ~/.ssh/config << 'EOF'
-Host github.com
-  HostName github.com
-  User git
-  IdentityFile ~/.ssh/github_key
-  IdentitiesOnly yes
-EOF
-    chmod 600 ~/.ssh/config
-  fi
-  log "GitHub SSH: configured"
 }
 
 # ---------------------------------------------------------------------------
@@ -118,7 +90,6 @@ start_ai_toolkit() {
     return
   fi
 
-  # Persistent workspace dirs on the volume
   mkdir -p "${ATK_WORKSPACE}"
   for dir in config datasets output jobs; do
     mkdir -p "${ATK_WORKSPACE}/${dir}"
@@ -133,7 +104,7 @@ start_ai_toolkit() {
   export DATABASE_URL="file:${ATK_DB}"
   export AI_TOOLKIT_PYTHON="${ATK_VENV}/bin/python"
 
-  # Init DB schema on first run (idempotent)
+  # Init DB on first run
   if [[ ! -f "${ATK_DB}" ]]; then
     log "ai-toolkit: initializing Prisma DB..."
     cd "${ATK_CODE}/ui"
@@ -142,7 +113,6 @@ start_ai_toolkit() {
     cd - >/dev/null
   fi
 
-  # Launch worker + Next.js separately to avoid concurrently port conflicts
   log "ai-toolkit: starting cron worker..."
   cd "${ATK_CODE}/ui"
   nohup node dist/cron/worker.js \
@@ -161,7 +131,6 @@ start_ai_toolkit() {
 # ---------------------------------------------------------------------------
 
 setup_ssh
-setup_github_ssh
 start_s3_offloader
 
 case "${RUN_AI_TOOLKIT,,}" in
