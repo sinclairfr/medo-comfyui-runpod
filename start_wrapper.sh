@@ -3,6 +3,9 @@
 # Disable Jupyter before start.sh runs
 sed -i 's/start_jupyter$/true/' /start.sh
 
+# Ensure start.sh is executable
+chmod +x /start.sh
+
 # Wait for network + workspace, then launch S3 offloader
 (
   until curl -sf https://pypi.org > /dev/null 2>&1; do sleep 3; done
