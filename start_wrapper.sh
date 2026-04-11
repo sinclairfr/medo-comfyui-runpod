@@ -12,6 +12,7 @@ S3_OFFLOADER_REPO="https://github.com/sinclairfr/comfyui_S3_offloader"
 ATK_CODE="/opt/ai-toolkit"
 ATK_VENV="/opt/ai-toolkit-venv"
 ATK_WORKSPACE="/workspace/ai-toolkit"
+ATK_DB="${ATK_WORKSPACE}/aitk_db.db"
 RUN_AI_TOOLKIT="${RUN_AI_TOOLKIT:-false}"
 
 log() { echo "[wrapper] $*"; }
@@ -87,8 +88,6 @@ start_s3_offloader() {
 
 # ---------------------------------------------------------------------------
 # ai-toolkit UI (Next.js, port 8675)
-# Code baked in image at /opt/ai-toolkit
-# User data (configs, datasets, output) on volume at /workspace/ai-toolkit
 # ---------------------------------------------------------------------------
 start_ai_toolkit() {
   if [[ ! -d "${ATK_CODE}" ]]; then
@@ -101,10 +100,10 @@ start_ai_toolkit() {
     return
   fi
 
-  # Ensure workspace dirs exist on the persistent volume
+  # Persistent workspace dirs on the volume
+  mkdir -p "${ATK_WORKSPACE}"
   for dir in config datasets output jobs; do
     mkdir -p "${ATK_WORKSPACE}/${dir}"
-    # Symlink into code tree if not already there
     if [[ ! -e "${ATK_CODE}/${dir}" ]]; then
       ln -s "${ATK_WORKSPACE}/${dir}" "${ATK_CODE}/${dir}"
     elif [[ ! -L "${ATK_CODE}/${dir}" ]]; then
@@ -113,17 +112,27 @@ start_ai_toolkit() {
     fi
   done
 
-  # Prisma DB lives on the persistent volume
-  mkdir -p "${ATK_WORKSPACE}"
-  export DATABASE_URL="file:${ATK_WORKSPACE}/aitk_db.db"
-
-  # Point ai-toolkit to its isolated Python venv
+  export DATABASE_URL="file:${ATK_DB}"
   export AI_TOOLKIT_PYTHON="${ATK_VENV}/bin/python"
 
-  # Next.js start — runs the pre-built .next app + the cron worker
-  log "ai-toolkit: starting UI on port 8675..."
+  # Init DB schema on first run (idempotent)
+  if [[ ! -f "${ATK_DB}" ]]; then
+    log "ai-toolkit: initializing Prisma DB..."
+    cd "${ATK_CODE}/ui"
+    DATABASE_URL="file:${ATK_DB}" npx prisma db push --skip-generate 2>&1 \
+      | grep -E "(sync|error|Error)" || true
+    cd - >/dev/null
+  fi
+
+  # Launch worker + Next.js separately to avoid concurrently port conflicts
+  log "ai-toolkit: starting cron worker..."
   cd "${ATK_CODE}/ui"
-  nohup npm run start \
+  nohup node dist/cron/worker.js \
+    >> "${ATK_WORKSPACE}/worker.log" 2>&1 &
+  log "ai-toolkit: worker started (PID $!)"
+
+  log "ai-toolkit: starting Next.js UI on port 8675..."
+  nohup node_modules/.bin/next start --port 8675 \
     >> "${ATK_WORKSPACE}/server.log" 2>&1 &
   log "ai-toolkit: UI started (PID $!), logs → ${ATK_WORKSPACE}/server.log"
   cd - >/dev/null
@@ -144,7 +153,6 @@ esac
 
 # Expose ComfyUI venv bin so ComfyUI-Manager finds pip at prestartup
 export PATH="${COMFYUI_VENV}/bin:${PATH}"
-# Also write it to /etc/environment so /start.sh child processes inherit it
 echo "PATH=${COMFYUI_VENV}/bin:${PATH}" >> /etc/environment
 
 log "Handing off to /start.sh..."
