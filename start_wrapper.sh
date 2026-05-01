@@ -18,6 +18,20 @@ RUN_AI_TOOLKIT="${RUN_AI_TOOLKIT:-false}"
 log() { echo "[wrapper] $*"; }
 
 # ---------------------------------------------------------------------------
+# Ensure ComfyUI is at /workspace/ComfyUI (runtime: network volume may have old path)
+# ---------------------------------------------------------------------------
+ensure_comfyui_path() {
+  [ -e /workspace/ComfyUI ] && return
+  for src in /workspace/runpod-slim/ComfyUI /workspace/runpod-slim/Comfyui; do
+    if [ -d "$src" ]; then
+      ln -s "$src" /workspace/ComfyUI
+      log "ComfyUI: symlinked $src → /workspace/ComfyUI"
+      return
+    fi
+  done
+}
+
+# ---------------------------------------------------------------------------
 # SSH
 # ---------------------------------------------------------------------------
 setup_ssh() {
@@ -130,6 +144,7 @@ start_ai_toolkit() {
 # Main
 # ---------------------------------------------------------------------------
 
+ensure_comfyui_path
 setup_ssh
 start_s3_offloader
 
