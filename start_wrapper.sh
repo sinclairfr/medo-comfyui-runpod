@@ -18,33 +18,27 @@ RUN_AI_TOOLKIT="${RUN_AI_TOOLKIT:-false}"
 log() { echo "[wrapper] $*"; }
 
 # ---------------------------------------------------------------------------
-# Ensure ComfyUI is at /workspace/ComfyUI (runtime: network volume may have old path)
-# Only acts when old path is a real directory (not a symlink), meaning the
-# migration hasn't happened yet. Backs up any pre-existing /workspace/ComfyUI
-# so no data is lost, then moves the real install and leaves a symlink behind.
+# Pre-wire /workspace/runpod-slim/ComfyUI as a symlink to /workspace/ComfyUI
+# before /start.sh runs, so even if something outside our patched /start.sh
+# still references the old path it resolves correctly.
 # ---------------------------------------------------------------------------
 ensure_comfyui_path() {
-  for src in /workspace/runpod-slim/ComfyUI /workspace/runpod-slim/Comfyui; do
-    # Skip if old path doesn't exist or is already a symlink (already migrated)
-    { [ -d "$src" ] && [ ! -L "$src" ]; } || continue
+  # Nothing to do if the user's install isn't there yet (first ever boot)
+  [ -d /workspace/ComfyUI ] || return
 
-    if [ ! -e /workspace/ComfyUI ]; then
-      log "ComfyUI: moving $src → /workspace/ComfyUI..."
-      mv "$src" /workspace/ComfyUI \
-        && ln -s /workspace/ComfyUI "$src" \
-        && log "ComfyUI: migration done" \
-        || log "ComfyUI: migration FAILED"
-    else
-      # Both exist as real dirs — back up the stale /workspace/ComfyUI and replace it
-      log "ComfyUI: both dirs exist; backing up /workspace/ComfyUI → /workspace/ComfyUI.bak"
-      mv /workspace/ComfyUI /workspace/ComfyUI.bak \
-        && mv "$src" /workspace/ComfyUI \
-        && ln -s /workspace/ComfyUI "$src" \
-        && log "ComfyUI: migration done (stale backup at /workspace/ComfyUI.bak)" \
-        || log "ComfyUI: migration FAILED"
-    fi
-    return
-  done
+  mkdir -p /workspace/runpod-slim
+
+  local slim=/workspace/runpod-slim/ComfyUI
+  if [ -L "$slim" ]; then
+    log "ComfyUI: $slim already a symlink — OK"
+  elif [ -d "$slim" ]; then
+    log "ComfyUI: replacing real dir $slim with symlink → /workspace/ComfyUI"
+    rm -rf "$slim"
+    ln -s /workspace/ComfyUI "$slim"
+  else
+    log "ComfyUI: pre-creating $slim → /workspace/ComfyUI"
+    ln -s /workspace/ComfyUI "$slim"
+  fi
 }
 
 # ---------------------------------------------------------------------------
