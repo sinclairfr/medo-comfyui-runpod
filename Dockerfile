@@ -3,6 +3,18 @@
 FROM runpod/comfyui:latest
 
 # ---------------------------------------------------------------------------
+# Relocate ComfyUI to /workspace/ComfyUI (base image uses /workspace/runpod-slim/*)
+# Keep a symlink at the old path so /start.sh from the base image still works.
+# ---------------------------------------------------------------------------
+RUN set -ex; \
+    for src in /workspace/runpod-slim/ComfyUI /workspace/runpod-slim/Comfyui; do \
+        if [ -d "$src" ] && [ ! -e /workspace/ComfyUI ]; then \
+            mv "$src" /workspace/ComfyUI; \
+            ln -s /workspace/ComfyUI "$src"; \
+        fi; \
+    done
+
+# ---------------------------------------------------------------------------
 # System tools — the stuff you always need when SSHed into a pod
 # ---------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
