@@ -19,16 +19,24 @@ log() { echo "[wrapper] $*"; }
 
 # ---------------------------------------------------------------------------
 # Ensure ComfyUI is at /workspace/ComfyUI (runtime: network volume may have old path)
+# Moves the directory once if needed, then symlinks the old path back so
+# nothing that still references it (e.g. hardcoded scripts) breaks.
 # ---------------------------------------------------------------------------
 ensure_comfyui_path() {
-  [ -e /workspace/ComfyUI ] && return
+  # Already in the right place — nothing to do
+  [ -d /workspace/ComfyUI ] && return
+
   for src in /workspace/runpod-slim/ComfyUI /workspace/runpod-slim/Comfyui; do
-    if [ -d "$src" ]; then
-      ln -s "$src" /workspace/ComfyUI
-      log "ComfyUI: symlinked $src → /workspace/ComfyUI"
-      return
-    fi
+    [ -d "$src" ] || continue
+    log "ComfyUI: moving $src → /workspace/ComfyUI (one-time migration)..."
+    mv "$src" /workspace/ComfyUI \
+      && ln -s /workspace/ComfyUI "$src" \
+      && log "ComfyUI: migration done, symlink left at $src" \
+      || log "ComfyUI: migration FAILED — $src left in place"
+    return
   done
+
+  log "ComfyUI: WARNING — not found at old or new path, /start.sh will handle it"
 }
 
 # ---------------------------------------------------------------------------
