@@ -3,16 +3,13 @@
 FROM runpod/comfyui:latest
 
 # ---------------------------------------------------------------------------
-# Relocate ComfyUI to /workspace/ComfyUI (base image uses /workspace/runpod-slim/*)
-# Keep a symlink at the old path so /start.sh from the base image still works.
+# Patch /start.sh so it uses /workspace/ComfyUI instead of the base image's
+# hardcoded /workspace/runpod-slim/ComfyUI path.
 # ---------------------------------------------------------------------------
-RUN set -ex; \
-    for src in /workspace/runpod-slim/ComfyUI /workspace/runpod-slim/Comfyui; do \
-        if [ -d "$src" ] && [ ! -e /workspace/ComfyUI ]; then \
-            mv "$src" /workspace/ComfyUI; \
-            ln -s /workspace/ComfyUI "$src"; \
-        fi; \
-    done
+RUN sed -i \
+    -e 's|/workspace/runpod-slim/ComfyUI|/workspace/ComfyUI|g' \
+    -e 's|/workspace/runpod-slim/Comfyui|/workspace/ComfyUI|g' \
+    /start.sh
 
 # ---------------------------------------------------------------------------
 # System tools — the stuff you always need when SSHed into a pod

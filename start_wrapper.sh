@@ -18,25 +18,27 @@ RUN_AI_TOOLKIT="${RUN_AI_TOOLKIT:-false}"
 log() { echo "[wrapper] $*"; }
 
 # ---------------------------------------------------------------------------
-# Ensure ComfyUI is at /workspace/ComfyUI (runtime: network volume may have old path)
-# Moves the directory once if needed, then symlinks the old path back so
-# nothing that still references it (e.g. hardcoded scripts) breaks.
+# Pre-wire /workspace/runpod-slim/ComfyUI as a symlink to /workspace/ComfyUI
+# before /start.sh runs, so even if something outside our patched /start.sh
+# still references the old path it resolves correctly.
 # ---------------------------------------------------------------------------
 ensure_comfyui_path() {
-  # Already in the right place — nothing to do
-  [ -d /workspace/ComfyUI ] && return
+  # Nothing to do if the user's install isn't there yet (first ever boot)
+  [ -d /workspace/ComfyUI ] || return
 
-  for src in /workspace/runpod-slim/ComfyUI /workspace/runpod-slim/Comfyui; do
-    [ -d "$src" ] || continue
-    log "ComfyUI: moving $src → /workspace/ComfyUI (one-time migration)..."
-    mv "$src" /workspace/ComfyUI \
-      && ln -s /workspace/ComfyUI "$src" \
-      && log "ComfyUI: migration done, symlink left at $src" \
-      || log "ComfyUI: migration FAILED — $src left in place"
-    return
-  done
+  mkdir -p /workspace/runpod-slim
 
-  log "ComfyUI: WARNING — not found at old or new path, /start.sh will handle it"
+  local slim=/workspace/runpod-slim/ComfyUI
+  if [ -L "$slim" ]; then
+    log "ComfyUI: $slim already a symlink — OK"
+  elif [ -d "$slim" ]; then
+    log "ComfyUI: replacing real dir $slim with symlink → /workspace/ComfyUI"
+    rm -rf "$slim"
+    ln -s /workspace/ComfyUI "$slim"
+  else
+    log "ComfyUI: pre-creating $slim → /workspace/ComfyUI"
+    ln -s /workspace/ComfyUI "$slim"
+  fi
 }
 
 # ---------------------------------------------------------------------------
