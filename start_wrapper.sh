@@ -19,24 +19,32 @@ log() { echo "[wrapper] $*"; }
 
 # ---------------------------------------------------------------------------
 # Ensure ComfyUI is at /workspace/ComfyUI (runtime: network volume may have old path)
-# Moves the directory once if needed, then symlinks the old path back so
-# nothing that still references it (e.g. hardcoded scripts) breaks.
+# Only acts when old path is a real directory (not a symlink), meaning the
+# migration hasn't happened yet. Backs up any pre-existing /workspace/ComfyUI
+# so no data is lost, then moves the real install and leaves a symlink behind.
 # ---------------------------------------------------------------------------
 ensure_comfyui_path() {
-  # Already in the right place — nothing to do
-  [ -d /workspace/ComfyUI ] && return
-
   for src in /workspace/runpod-slim/ComfyUI /workspace/runpod-slim/Comfyui; do
-    [ -d "$src" ] || continue
-    log "ComfyUI: moving $src → /workspace/ComfyUI (one-time migration)..."
-    mv "$src" /workspace/ComfyUI \
-      && ln -s /workspace/ComfyUI "$src" \
-      && log "ComfyUI: migration done, symlink left at $src" \
-      || log "ComfyUI: migration FAILED — $src left in place"
+    # Skip if old path doesn't exist or is already a symlink (already migrated)
+    { [ -d "$src" ] && [ ! -L "$src" ]; } || continue
+
+    if [ ! -e /workspace/ComfyUI ]; then
+      log "ComfyUI: moving $src → /workspace/ComfyUI..."
+      mv "$src" /workspace/ComfyUI \
+        && ln -s /workspace/ComfyUI "$src" \
+        && log "ComfyUI: migration done" \
+        || log "ComfyUI: migration FAILED"
+    else
+      # Both exist as real dirs — back up the stale /workspace/ComfyUI and replace it
+      log "ComfyUI: both dirs exist; backing up /workspace/ComfyUI → /workspace/ComfyUI.bak"
+      mv /workspace/ComfyUI /workspace/ComfyUI.bak \
+        && mv "$src" /workspace/ComfyUI \
+        && ln -s /workspace/ComfyUI "$src" \
+        && log "ComfyUI: migration done (stale backup at /workspace/ComfyUI.bak)" \
+        || log "ComfyUI: migration FAILED"
+    fi
     return
   done
-
-  log "ComfyUI: WARNING — not found at old or new path, /start.sh will handle it"
 }
 
 # ---------------------------------------------------------------------------
