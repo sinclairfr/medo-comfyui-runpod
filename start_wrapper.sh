@@ -5,7 +5,7 @@
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-COMFYUI_VENV="/workspace/runpod-slim/ComfyUI/.venv-cu128"
+COMFYUI_VENV="/workspace/ComfyUI/.venv-cu128"
 S3_OFFLOADER_DIR="/workspace/comfyui_S3_offloader"
 S3_OFFLOADER_REPO="https://github.com/sinclairfr/comfyui_S3_offloader"
 
