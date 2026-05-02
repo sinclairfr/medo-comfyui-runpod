@@ -1,19 +1,7 @@
 #!/bin/bash
-# start_wrapper.sh — ENTRYPOINT for comfyui-medo image
-# All sections are idempotent — safe on pod restarts.
+# start_wrapper.sh — Docker ENTRYPOINT for comfyui-medo image
+# Handles image-level setup, then hands off to medo_start.sh.
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-COMFYUI_VENV="/workspace/runpod-slim/ComfyUI/.venv-cu128"
-S3_OFFLOADER_DIR="/workspace/comfyui_S3_offloader"
-S3_OFFLOADER_REPO="https://github.com/sinclairfr/comfyui_S3_offloader"
-
-ATK_CODE="/opt/ai-toolkit"
-ATK_VENV="/opt/ai-toolkit-venv"
-ATK_WORKSPACE="/workspace/ai-toolkit"
-ATK_DB="${ATK_WORKSPACE}/aitk_db.db"
-RUN_AI_TOOLKIT="${RUN_AI_TOOLKIT:-false}"
 REVISION="${REVISION:-0}"
 REVISION_DATE="${REVISION_DATE:-$(date +%d/%y)}"
 
@@ -28,7 +16,7 @@ print_header() {
 }
 
 # ---------------------------------------------------------------------------
-# SSH
+# SSH — host keys + authorized key + optional GitHub deploy key
 # ---------------------------------------------------------------------------
 setup_ssh() {
   mkdir -p ~/.ssh
@@ -67,96 +55,11 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# S3 offloader
-# ---------------------------------------------------------------------------
-start_s3_offloader() {
-  if [[ ! -d "${S3_OFFLOADER_DIR}" ]]; then
-    log "S3 offloader: cloning..."
-    git clone "${S3_OFFLOADER_REPO}" "${S3_OFFLOADER_DIR}" \
-      && log "S3 offloader: cloned OK" \
-      || { log "S3 offloader: clone FAILED — skipping"; return; }
-  else
-    log "S3 offloader: directory exists, pulling latest..."
-    cd "${S3_OFFLOADER_DIR}"
-    git pull || log "S3 offloader: pull failed — continuing anyway"
-    cd - >/dev/null
-  fi
-
-  [[ ! -f "${S3_OFFLOADER_DIR}/app.py" ]] \
-    && { log "S3 offloader: app.py not found — skipping"; return; }
-
-  cd "${S3_OFFLOADER_DIR}"
-  nohup python3 app.py >> /workspace/s3_offloader.log 2>&1 &
-  log "S3 offloader: started (PID $!)"
-  cd - >/dev/null
-}
-
-# ---------------------------------------------------------------------------
-# ai-toolkit UI (Next.js, port 8675)
-# ---------------------------------------------------------------------------
-start_ai_toolkit() {
-  if [[ ! -d "${ATK_CODE}" ]]; then
-    log "ai-toolkit: /opt/ai-toolkit missing — image build issue"
-    return
-  fi
-
-  if [[ ! -d "${ATK_CODE}/ui/.next" ]]; then
-    log "ai-toolkit: ui/.next not found — Next.js build may have failed"
-    return
-  fi
-
-  mkdir -p "${ATK_WORKSPACE}"
-  for dir in config datasets output jobs; do
-    mkdir -p "${ATK_WORKSPACE}/${dir}"
-    if [[ ! -e "${ATK_CODE}/${dir}" ]]; then
-      ln -s "${ATK_WORKSPACE}/${dir}" "${ATK_CODE}/${dir}"
-    elif [[ ! -L "${ATK_CODE}/${dir}" ]]; then
-      mv "${ATK_CODE}/${dir}" "${ATK_CODE}/${dir}.bak"
-      ln -s "${ATK_WORKSPACE}/${dir}" "${ATK_CODE}/${dir}"
-    fi
-  done
-
-  export DATABASE_URL="file:${ATK_DB}"
-  export AI_TOOLKIT_PYTHON="${ATK_VENV}/bin/python"
-
-  # Init DB on first run
-  if [[ ! -f "${ATK_DB}" ]]; then
-    log "ai-toolkit: initializing Prisma DB..."
-    cd "${ATK_CODE}/ui"
-    DATABASE_URL="file:${ATK_DB}" npx prisma db push --skip-generate 2>&1 \
-      | grep -E "(sync|error|Error)" || true
-    cd - >/dev/null
-  fi
-
-  log "ai-toolkit: starting cron worker..."
-  cd "${ATK_CODE}/ui"
-  nohup node dist/cron/worker.js \
-    >> "${ATK_WORKSPACE}/worker.log" 2>&1 &
-  log "ai-toolkit: worker started (PID $!)"
-
-  log "ai-toolkit: starting Next.js UI on port 8675..."
-  nohup node_modules/.bin/next start --port 8675 \
-    >> "${ATK_WORKSPACE}/server.log" 2>&1 &
-  log "ai-toolkit: UI started (PID $!), logs → ${ATK_WORKSPACE}/server.log"
-  cd - >/dev/null
-}
-
-# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 print_header
 setup_ssh
-start_s3_offloader
 
-case "${RUN_AI_TOOLKIT,,}" in
-  true|1|yes) start_ai_toolkit ;;
-  *) log "ai-toolkit: disabled (RUN_AI_TOOLKIT=${RUN_AI_TOOLKIT})" ;;
-esac
-
-# Expose ComfyUI venv bin so ComfyUI-Manager finds pip at prestartup
-export PATH="${COMFYUI_VENV}/bin:${PATH}"
-echo "PATH=${COMFYUI_VENV}/bin:${PATH}" >> /etc/environment
-
-log "Handing off to /start.sh..."
-exec /start.sh
+log "Handing off to /medo_start.sh..."
+exec /medo_start.sh
