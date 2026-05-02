@@ -14,8 +14,18 @@ ATK_VENV="/opt/ai-toolkit-venv"
 ATK_WORKSPACE="/workspace/ai-toolkit"
 ATK_DB="${ATK_WORKSPACE}/aitk_db.db"
 RUN_AI_TOOLKIT="${RUN_AI_TOOLKIT:-false}"
+REVISION="${REVISION:-0}"
+REVISION_DATE="${REVISION_DATE:-$(date +%d/%y)}"
 
 log() { echo "[wrapper] $*"; }
+
+print_header() {
+  echo "========================================"
+  echo "  comfyui-medo"
+  echo "  revision: r${REVISION}"
+  echo "  date: ${REVISION_DATE}"
+  echo "========================================"
+}
 
 # ---------------------------------------------------------------------------
 # Pre-wire /workspace/runpod-slim/ComfyUI as a symlink to /workspace/ComfyUI
@@ -159,6 +169,7 @@ start_ai_toolkit() {
 # Main
 # ---------------------------------------------------------------------------
 
+print_header
 ensure_comfyui_path
 setup_ssh
 start_s3_offloader
