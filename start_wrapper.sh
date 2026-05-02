@@ -89,6 +89,11 @@ start_s3_offloader() {
     git clone "${S3_OFFLOADER_REPO}" "${S3_OFFLOADER_DIR}" \
       && log "S3 offloader: cloned OK" \
       || { log "S3 offloader: clone FAILED — skipping"; return; }
+  else
+    log "S3 offloader: directory exists, pulling latest..."
+    cd "${S3_OFFLOADER_DIR}"
+    git pull || log "S3 offloader: pull failed — continuing anyway"
+    cd - >/dev/null
   fi
 
   [[ ! -f "${S3_OFFLOADER_DIR}/app.py" ]] \
