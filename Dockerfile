@@ -3,18 +3,16 @@
 FROM runpod/comfyui:latest
 
 # ---------------------------------------------------------------------------
-# Patch /start.sh so it uses /workspace/ComfyUI instead of the base image's
-# hardcoded /workspace/runpod-slim/ComfyUI path.
+# Timezone
 # ---------------------------------------------------------------------------
-RUN sed -i \
-    -e 's|/workspace/runpod-slim/ComfyUI|/workspace/ComfyUI|g' \
-    -e 's|/workspace/runpod-slim/Comfyui|/workspace/ComfyUI|g' \
-    /start.sh
+ENV TZ=Europe/Paris
 
 # ---------------------------------------------------------------------------
 # System tools — the stuff you always need when SSHed into a pod
 # ---------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    # timezone
+    tzdata \
     # editors
     nano \
     vim \
@@ -42,7 +40,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tmux \
     screen \
     less \
+    && ln -snf /usr/share/zoneinfo/Europe/Paris /etc/localtime \
+    && echo Europe/Paris > /etc/timezone \
     && rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------------------------
+# uv — fast pip replacement, needed by ComfyUI-Manager at prestartup
+# ---------------------------------------------------------------------------
+RUN pip install --no-cache-dir uv
 
 # ---------------------------------------------------------------------------
 # Node.js 20 (required for ai-toolkit UI)

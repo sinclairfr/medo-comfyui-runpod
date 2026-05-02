@@ -5,7 +5,7 @@
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-COMFYUI_VENV="/workspace/ComfyUI/.venv-cu128"
+COMFYUI_VENV="/workspace/runpod-slim/ComfyUI/.venv-cu128"
 S3_OFFLOADER_DIR="/workspace/comfyui_S3_offloader"
 S3_OFFLOADER_REPO="https://github.com/sinclairfr/comfyui_S3_offloader"
 
@@ -25,30 +25,6 @@ print_header() {
   echo "  revision: r${REVISION}"
   echo "  date: ${REVISION_DATE}"
   echo "========================================"
-}
-
-# ---------------------------------------------------------------------------
-# Pre-wire /workspace/runpod-slim/ComfyUI as a symlink to /workspace/ComfyUI
-# before /start.sh runs, so even if something outside our patched /start.sh
-# still references the old path it resolves correctly.
-# ---------------------------------------------------------------------------
-ensure_comfyui_path() {
-  # Nothing to do if the user's install isn't there yet (first ever boot)
-  [ -d /workspace/ComfyUI ] || return
-
-  mkdir -p /workspace/runpod-slim
-
-  local slim=/workspace/runpod-slim/ComfyUI
-  if [ -L "$slim" ]; then
-    log "ComfyUI: $slim already a symlink — OK"
-  elif [ -d "$slim" ]; then
-    log "ComfyUI: replacing real dir $slim with symlink → /workspace/ComfyUI"
-    rm -rf "$slim"
-    ln -s /workspace/ComfyUI "$slim"
-  else
-    log "ComfyUI: pre-creating $slim → /workspace/ComfyUI"
-    ln -s /workspace/ComfyUI "$slim"
-  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -170,7 +146,6 @@ start_ai_toolkit() {
 # ---------------------------------------------------------------------------
 
 print_header
-ensure_comfyui_path
 setup_ssh
 start_s3_offloader
 
