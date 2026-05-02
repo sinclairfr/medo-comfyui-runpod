@@ -103,9 +103,10 @@ RUN cd /opt/ai-toolkit/ui \
     && npm run build
 
 # ---------------------------------------------------------------------------
-# Wrapper
+# Startup scripts
 # ---------------------------------------------------------------------------
 COPY start_wrapper.sh /start_wrapper.sh
-RUN chmod +x /start_wrapper.sh
+COPY medo_start.sh /medo_start.sh
+RUN chmod +x /start_wrapper.sh /medo_start.sh
 
 ENTRYPOINT ["/start_wrapper.sh"]
