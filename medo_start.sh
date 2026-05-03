@@ -36,10 +36,11 @@ fi
 # Only runs on subsequent boots once the ComfyUI venv exists.
 COMFYUI_PY="$(find_comfyui_python)"
 if [[ "${COMFYUI_PY}" != "python3" ]]; then
+    # ─── mediapipe / controlnet_aux compatibility ─────────────────────────────
     if ! "${COMFYUI_PY}" -c "import mediapipe as mp; assert hasattr(mp, 'solutions')" >/dev/null 2>&1; then
-        log "Pinning mediapipe==0.10.11..."
+        log "Installing mediapipe>=0.10.13..."
         "${COMFYUI_PY}" -m pip install --no-cache-dir "mediapipe>=0.10.13" \
-            && log "mediapipe pinned OK" || log "WARNING: mediapipe pin failed"
+            && log "mediapipe OK" || log "WARNING: mediapipe install failed"
     else
         log "mediapipe OK"
     fi
@@ -66,8 +67,29 @@ if [[ "${COMFYUI_PY}" != "python3" ]]; then
     "${COMFYUI_PY}" -m pip install -q "comfyui-frontend-package>=1.41.21" \
         && log "comfyui-frontend-package patched" \
         || log "WARNING: frontend patch failed"
+
+    # ─── Custom node missing deps ──────────────────────────────────────────────
+    # sox        → qwen3-tts-comfyui (wraps system sox binary)
+    # wget       → comfyui_layerstyle
+    if ! "${COMFYUI_PY}" -c "import sox, wget" >/dev/null 2>&1; then
+        log "Installing custom node deps (sox, wget)..."
+        "${COMFYUI_PY}" -m pip install --no-cache-dir sox wget \
+            && log "sox + wget installed OK" || log "WARNING: sox/wget install failed"
+    else
+        log "sox + wget OK"
+    fi
+
+    # llama-cpp-python → AILab_QwenVL_GGUF (pre-built cu128 wheel, best-effort)
+    if ! "${COMFYUI_PY}" -c "import llama_cpp" >/dev/null 2>&1; then
+        log "Installing llama-cpp-python (cu128 wheel)..."
+        "${COMFYUI_PY}" -m pip install --no-cache-dir llama-cpp-python \
+            --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu128 \
+            && log "llama-cpp-python OK" || log "WARNING: llama-cpp-python install failed (non-critical)"
+    else
+        log "llama-cpp-python OK"
+    fi
 else
-    log "ComfyUI venv not found yet (first boot) — skipping mediapipe/aimdo/frontend patches"
+    log "ComfyUI venv not found yet (first boot) — skipping venv patches"
 fi
 
 # ─── Optional model downloads ─────────────────────────────────────────────────

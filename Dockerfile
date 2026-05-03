@@ -35,6 +35,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
     build-essential \
+    # audio (required by sox Python package used in qwen3-tts-comfyui)
+    sox \
+    libsox-fmt-all \
     # misc
     htop \
     tmux \
