@@ -70,12 +70,16 @@ MEDO_REPO="${MEDO_REPO:-sinclairfr/medo-comfyui-runpod}"
 MEDO_BRANCH="${MEDO_BRANCH:-main}"
 MEDO_URL="https://raw.githubusercontent.com/${MEDO_REPO}/${MEDO_BRANCH}/medo_start.sh"
 
-log "Fetching medo_start.sh from ${MEDO_BRANCH}..."
-if curl -fsSL --max-time 15 "${MEDO_URL}" -o /tmp/medo_start.sh 2>/dev/null; then
+log "Fetching medo_start.sh from ${MEDO_BRANCH} (${MEDO_URL})..."
+CURL_ERR=$(curl -fsSL --max-time 30 --retry 3 --retry-delay 2 \
+  "${MEDO_URL}" -o /tmp/medo_start.sh 2>&1)
+CURL_RC=$?
+if [[ ${CURL_RC} -eq 0 ]] && [[ -s /tmp/medo_start.sh ]]; then
   chmod +x /tmp/medo_start.sh
-  log "Handing off to medo_start.sh (live, branch: ${MEDO_BRANCH})..."
+  log "Download OK — handing off (live, branch: ${MEDO_BRANCH})..."
   exec /tmp/medo_start.sh
 else
-  log "Download failed — using baked-in /medo_start.sh"
+  log "Download failed (rc=${CURL_RC}): ${CURL_ERR}"
+  log "Falling back to baked-in /medo_start.sh"
   exec /medo_start.sh
 fi

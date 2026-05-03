@@ -15,7 +15,23 @@ find_comfyui_python() {
     echo "python3"
 }
 
-log "Pod started"
+log "Pod started (baked-in fallback)"
+
+# ─── Self-update: if we're the baked-in copy, try to fetch a fresh version ────
+# This runs only when start_wrapper.sh's download failed (no /tmp/medo_start.sh).
+if [[ "${BASH_SOURCE[0]}" == "/medo_start.sh" ]]; then
+  _SELF_URL="https://raw.githubusercontent.com/${MEDO_REPO:-sinclairfr/medo-comfyui-runpod}/${MEDO_BRANCH:-main}/medo_start.sh"
+  log "Attempting self-update from ${_SELF_URL}..."
+  if curl -fsSL --max-time 30 --retry 3 --retry-delay 2 \
+      "${_SELF_URL}" -o /tmp/medo_start.sh 2>/tmp/medo_curl.err \
+      && [[ -s /tmp/medo_start.sh ]]; then
+    chmod +x /tmp/medo_start.sh
+    log "Self-update OK — re-execing live version..."
+    exec /tmp/medo_start.sh
+  else
+    log "Self-update failed: $(cat /tmp/medo_curl.err 2>/dev/null) — continuing with baked-in"
+  fi
+fi
 
 # ─── HuggingFace cache → network volume ───────────────────────────────────────
 export HF_HOME="/workspace/.cache/huggingface"
