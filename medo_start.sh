@@ -159,8 +159,9 @@ nohup filebrowser \
     --address 0.0.0.0 \
     --port 8081 \
     --root /workspace \
+    --database /workspace/.filebrowser.db \
     --noauth \
-    --log /workspace/filebrowser.log >/dev/null 2>&1 &
+    >> /workspace/filebrowser.log 2>&1 &
 log "Filebrowser started on port 8081 (PID $!)"
 
 # ─── AI-Toolkit UI ────────────────────────────────────────────────────────────
