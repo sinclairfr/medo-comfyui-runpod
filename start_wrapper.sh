@@ -36,7 +36,7 @@ setup_ssh() {
   if [[ -n "${SSH_PRIVATE_KEY:-}" ]]; then
     echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/id_ed25519
     chmod 600 ~/.ssh/id_ed25519
-    ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+    ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
     if ! grep -q "Host github.com" ~/.ssh/config 2>/dev/null; then
       cat >> ~/.ssh/config << 'EOF'
 Host github.com
@@ -61,5 +61,21 @@ EOF
 print_header
 setup_ssh
 
-log "Handing off to /medo_start.sh..."
-exec /medo_start.sh
+# ---------------------------------------------------------------------------
+# Download medo_start.sh from GitHub at runtime so script changes don't
+# require a Docker rebuild. Falls back to the baked-in copy if unavailable.
+# Override MEDO_BRANCH (pod env var) to test a feature branch.
+# ---------------------------------------------------------------------------
+MEDO_REPO="${MEDO_REPO:-sinclairfr/medo-comfyui-runpod}"
+MEDO_BRANCH="${MEDO_BRANCH:-main}"
+MEDO_URL="https://raw.githubusercontent.com/${MEDO_REPO}/${MEDO_BRANCH}/medo_start.sh"
+
+log "Fetching medo_start.sh from ${MEDO_BRANCH}..."
+if curl -fsSL --max-time 15 "${MEDO_URL}" -o /tmp/medo_start.sh 2>/dev/null; then
+  chmod +x /tmp/medo_start.sh
+  log "Handing off to medo_start.sh (live, branch: ${MEDO_BRANCH})..."
+  exec /tmp/medo_start.sh
+else
+  log "Download failed — using baked-in /medo_start.sh"
+  exec /medo_start.sh
+fi

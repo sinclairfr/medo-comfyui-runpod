@@ -38,7 +38,7 @@ COMFYUI_PY="$(find_comfyui_python)"
 if [[ "${COMFYUI_PY}" != "python3" ]]; then
     if ! "${COMFYUI_PY}" -c "import mediapipe as mp; assert hasattr(mp, 'solutions')" >/dev/null 2>&1; then
         log "Pinning mediapipe==0.10.11..."
-        "${COMFYUI_PY}" -m pip install --no-cache-dir "mediapipe==0.10.11" \
+        "${COMFYUI_PY}" -m pip install --no-cache-dir "mediapipe>=0.10.13" \
             && log "mediapipe pinned OK" || log "WARNING: mediapipe pin failed"
     else
         log "mediapipe OK"
@@ -84,6 +84,9 @@ if [[ ! -d "${S3_OFFLOADER_DIR}" ]]; then
         && log "S3 offloader cloned" || log "WARNING: S3 offloader clone failed"
 else
     log "comfyui_S3_offloader present, pulling latest..."
+    # Force HTTPS to avoid SSH host-key issues
+    git -C "${S3_OFFLOADER_DIR}" remote set-url origin \
+        "https://github.com/sinclairfr/comfyui_S3_offloader"
     git -C "${S3_OFFLOADER_DIR}" pull 2>&1 || log "WARNING: S3 offloader pull failed"
 fi
 
