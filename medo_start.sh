@@ -79,11 +79,31 @@ if [[ "${COMFYUI_PY}" != "python3" ]]; then
 
             if [[ -n "${TORCH_CU}" ]]; then
                 log "Installing PyTorch ${TORCH_CU} (driver supports CUDA ${CUDA_INT})..."
-                "${COMFYUI_PY}" -m pip install -q --no-cache-dir \
+                if "${COMFYUI_PY}" -m pip install -q --no-cache-dir \
+                    --upgrade --force-reinstall \
                     torch torchvision torchaudio \
-                    --index-url "https://download.pytorch.org/whl/${TORCH_CU}" \
-                    && log "PyTorch ${TORCH_CU} installed OK" \
-                    || log "WARNING: PyTorch ${TORCH_CU} install failed"
+                    --index-url "https://download.pytorch.org/whl/${TORCH_CU}"; then
+                    "${COMFYUI_PY}" -c "import torch; print(f'torch={torch.__version__} cuda={torch.version.cuda}')" \
+                        | sed 's/^/[torch] /'
+                    if "${COMFYUI_PY}" -c "import torch; torch.cuda.current_device()" >/dev/null 2>&1; then
+                        log "PyTorch ${TORCH_CU} installed OK"
+                    else
+                        log "WARNING: PyTorch ${TORCH_CU} still incompatible with host driver"
+                    fi
+                else
+                    log "WARNING: PyTorch ${TORCH_CU} install failed"
+                fi
+            fi
+
+            # Hard fallback: if CUDA still cannot initialize, install CPU wheels
+            # so ComfyUI can still boot instead of crashing at import time.
+            if ! "${COMFYUI_PY}" -c "import torch; torch.cuda.current_device()" >/dev/null 2>&1; then
+                log "CUDA runtime still unavailable — falling back to CPU PyTorch wheels"
+                "${COMFYUI_PY}" -m pip install -q --no-cache-dir \
+                    --index-url https://download.pytorch.org/whl/cpu \
+                    torch torchvision torchaudio \
+                    && log "CPU PyTorch fallback installed" \
+                    || log "WARNING: CPU PyTorch fallback install failed"
             fi
         else
             log "WARNING: CUDA unavailable but driver version unknown or ≥ 12.8 — skipping PyTorch fix"
