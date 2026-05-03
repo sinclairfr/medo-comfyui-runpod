@@ -15,13 +15,10 @@ find_comfyui_python() {
     echo "python3"
 }
 
-log "Pod started (baked-in fallback)"
-
 # ─── Self-update: if we're the baked-in copy, try to fetch a fresh version ────
-# This runs only when start_wrapper.sh's download failed (no /tmp/medo_start.sh).
 if [[ "${BASH_SOURCE[0]}" == "/medo_start.sh" ]]; then
+  log "Pod started (baked-in — attempting self-update...)"
   _SELF_URL="https://raw.githubusercontent.com/${MEDO_REPO:-sinclairfr/medo-comfyui-runpod}/${MEDO_BRANCH:-main}/medo_start.sh"
-  log "Attempting self-update from ${_SELF_URL}..."
   if curl -fsSL --max-time 30 --retry 3 --retry-delay 2 \
       "${_SELF_URL}" -o /tmp/medo_start.sh 2>/tmp/medo_curl.err \
       && [[ -s /tmp/medo_start.sh ]]; then
@@ -31,6 +28,8 @@ if [[ "${BASH_SOURCE[0]}" == "/medo_start.sh" ]]; then
   else
     log "Self-update failed: $(cat /tmp/medo_curl.err 2>/dev/null) — continuing with baked-in"
   fi
+else
+  log "Pod started (live from GitHub)"
 fi
 
 # ─── HuggingFace cache → network volume ───────────────────────────────────────
@@ -43,25 +42,28 @@ log "HF_HOME → ${HF_HOME}"
 # ─── HuggingFace login ────────────────────────────────────────────────────────
 if [[ -n "${HF_TOKEN:-}" ]] && [[ "${HF_TOKEN}" != "enter_your_huggingface_token_here" ]]; then
     log "Logging into HuggingFace..."
-    hf auth login --token "${HF_TOKEN}" 2>&1 | grep -v "^$" || log "WARNING: HF login failed"
+    hf auth login --token "${HF_TOKEN}" 2>&1 \
+        | grep -E "^(Login|Token is valid|WARNING)" \
+        || log "WARNING: HF login failed"
 else
     log "HF_TOKEN not set, skipping"
 fi
 
-# ─── mediapipe / controlnet_aux compatibility ─────────────────────────────────
-# Only runs on subsequent boots once the ComfyUI venv exists.
+# ─── ComfyUI venv patches (only after first boot, when venv exists) ───────────
 COMFYUI_PY="$(find_comfyui_python)"
 if [[ "${COMFYUI_PY}" != "python3" ]]; then
-    # ─── mediapipe / controlnet_aux compatibility ─────────────────────────────
-    if ! "${COMFYUI_PY}" -c "import mediapipe as mp; assert hasattr(mp, 'solutions')" >/dev/null 2>&1; then
+    log "ComfyUI venv: ${COMFYUI_PY}"
+
+    # mediapipe — install quietly, only if not already at correct version
+    if ! "${COMFYUI_PY}" -c "import mediapipe; assert mediapipe.__version__ >= '0.10.13'" >/dev/null 2>&1; then
         log "Installing mediapipe>=0.10.13..."
-        "${COMFYUI_PY}" -m pip install --no-cache-dir "mediapipe>=0.10.13" \
+        "${COMFYUI_PY}" -m pip install -q --no-cache-dir "mediapipe>=0.10.13" \
             && log "mediapipe OK" || log "WARNING: mediapipe install failed"
     else
         log "mediapipe OK"
     fi
 
-    # ─── comfy-aimdo (VRAM on-demand offloader) ───────────────────────────────
+    # comfy-aimdo (VRAM on-demand offloader)
     AIMDO_DIR="/workspace/comfy-aimdo"
     if ! "${COMFYUI_PY}" -c "import comfy_aimdo" >/dev/null 2>&1; then
         if [[ ! -d "${AIMDO_DIR}" ]]; then
@@ -71,36 +73,44 @@ if [[ "${COMFYUI_PY}" != "python3" ]]; then
         fi
         if [[ -d "${AIMDO_DIR}" ]]; then
             log "Installing comfy-aimdo..."
-            "${COMFYUI_PY}" -m pip install "${AIMDO_DIR}" \
+            "${COMFYUI_PY}" -m pip install -q "${AIMDO_DIR}" \
                 && log "comfy-aimdo installed OK" \
                 || log "WARNING: comfy-aimdo install failed"
         fi
     else
-        log "comfy-aimdo already installed, skipping"
+        log "comfy-aimdo OK"
     fi
 
-    # ─── ComfyUI frontend version patch ───────────────────────────────────────
-    "${COMFYUI_PY}" -m pip install -q "comfyui-frontend-package>=1.41.21" \
-        && log "comfyui-frontend-package patched" \
-        || log "WARNING: frontend patch failed"
+    # ComfyUI frontend version patch
+    if ! "${COMFYUI_PY}" -c "
+import comfyui_frontend_package as f
+from packaging.version import Version
+assert Version(f.__version__) >= Version('1.41.21')
+" >/dev/null 2>&1; then
+        log "Patching comfyui-frontend-package..."
+        "${COMFYUI_PY}" -m pip install -q "comfyui-frontend-package>=1.41.21" \
+            && log "comfyui-frontend-package patched" \
+            || log "WARNING: frontend patch failed"
+    else
+        log "comfyui-frontend-package OK"
+    fi
 
-    # ─── Custom node missing deps ──────────────────────────────────────────────
-    # sox        → qwen3-tts-comfyui (wraps system sox binary)
-    # wget       → comfyui_layerstyle
+    # Custom node missing deps: sox → qwen3-tts, wget → comfyui_layerstyle
     if ! "${COMFYUI_PY}" -c "import sox, wget" >/dev/null 2>&1; then
         log "Installing custom node deps (sox, wget)..."
-        "${COMFYUI_PY}" -m pip install --no-cache-dir sox wget \
-            && log "sox + wget installed OK" || log "WARNING: sox/wget install failed"
+        "${COMFYUI_PY}" -m pip install -q --no-cache-dir sox wget \
+            && log "sox + wget OK" || log "WARNING: sox/wget install failed"
     else
         log "sox + wget OK"
     fi
 
-    # llama-cpp-python → AILab_QwenVL_GGUF (pre-built cu128 wheel, best-effort)
+    # llama-cpp-python → AILab_QwenVL_GGUF (best-effort)
     if ! "${COMFYUI_PY}" -c "import llama_cpp" >/dev/null 2>&1; then
-        log "Installing llama-cpp-python (cu128 wheel)..."
-        "${COMFYUI_PY}" -m pip install --no-cache-dir llama-cpp-python \
+        log "Installing llama-cpp-python..."
+        "${COMFYUI_PY}" -m pip install -q --no-cache-dir llama-cpp-python \
             --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu128 \
-            && log "llama-cpp-python OK" || log "WARNING: llama-cpp-python install failed (non-critical)"
+            && log "llama-cpp-python OK" \
+            || log "WARNING: llama-cpp-python install failed (non-critical)"
     else
         log "llama-cpp-python OK"
     fi
@@ -109,11 +119,10 @@ else
 fi
 
 # ─── Optional model downloads ─────────────────────────────────────────────────
-[[ "${DOWNLOAD_WAN:-false}"  == "true" ]] && [[ -x /download_wan2.1.sh ]]  && /download_wan2.1.sh  || true
-[[ "${DOWNLOAD_FLUX:-false}" == "true" ]] && [[ -x /download_Files.sh ]]   && /download_Files.sh   || true
+[[ "${DOWNLOAD_WAN:-false}"  == "true" ]] && [[ -x /download_wan2.1.sh ]] && /download_wan2.1.sh  || true
+[[ "${DOWNLOAD_FLUX:-false}" == "true" ]] && [[ -x /download_Files.sh  ]] && /download_Files.sh   || true
 
 # ─── S3 offloader ─────────────────────────────────────────────────────────────
-# flask/boto3/python-dotenv are pre-installed in the image (Dockerfile pip install).
 S3_OFFLOADER_DIR="/workspace/comfyui_S3_offloader"
 
 if [[ ! -d "${S3_OFFLOADER_DIR}" ]]; then
@@ -121,16 +130,15 @@ if [[ ! -d "${S3_OFFLOADER_DIR}" ]]; then
     git clone https://github.com/sinclairfr/comfyui_S3_offloader "${S3_OFFLOADER_DIR}" \
         && log "S3 offloader cloned" || log "WARNING: S3 offloader clone failed"
 else
-    log "comfyui_S3_offloader present, pulling latest..."
-    # Force HTTPS to avoid SSH host-key issues
+    log "S3 offloader present, pulling latest..."
     git -C "${S3_OFFLOADER_DIR}" remote set-url origin \
         "https://github.com/sinclairfr/comfyui_S3_offloader"
-    git -C "${S3_OFFLOADER_DIR}" pull 2>&1 || log "WARNING: S3 offloader pull failed"
+    git -C "${S3_OFFLOADER_DIR}" pull 2>&1 | tail -1 \
+        || log "WARNING: S3 offloader pull failed"
 fi
 
 if [[ -f "${S3_OFFLOADER_DIR}/app.py" ]]; then
-    nohup python3 "${S3_OFFLOADER_DIR}/app.py" \
-        > "${S3_OFFLOADER_DIR}/app.log" 2>&1 &
+    nohup python3 "${S3_OFFLOADER_DIR}/app.py" > "${S3_OFFLOADER_DIR}/app.log" 2>&1 &
     log "S3 offloader started (PID $!)"
 else
     log "S3 offloader app.py not found, skipping"
@@ -169,6 +177,17 @@ if [[ -d "/workspace/ai-toolkit/ui" ]]; then
 else
     log "AI-Toolkit UI not found at /workspace/ai-toolkit/ui, skipping"
 fi
+
+# ─── Pre-flight: kill stale ComfyUI processes + release SQLite locks ──────────
+# Handles the case where a previous ComfyUI crashed and left the db locked.
+if pkill -0 -f "python.*main\.py" 2>/dev/null; then
+    log "Killing stale ComfyUI process(es)..."
+    pkill -f "python.*main\.py" 2>/dev/null
+    sleep 1
+fi
+# Safe to remove WAL/SHM after killing all writers — SQLite will rebuild them.
+rm -f /workspace/ComfyUI/user/comfyui.db-wal \
+      /workspace/ComfyUI/user/comfyui.db-shm
 
 # ─── Hand off to RunPod's /start.sh (sets up venv + launches ComfyUI) ─────────
 log "Handing off to /start.sh..."
