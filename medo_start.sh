@@ -54,6 +54,44 @@ COMFYUI_PY="$(find_comfyui_python)"
 if [[ "${COMFYUI_PY}" != "python3" ]]; then
     log "ComfyUI venv: ${COMFYUI_PY}"
 
+    # ─── PyTorch / CUDA driver compatibility fix ──────────────────────────────
+    # If the host machine's NVIDIA driver is older than what cu128 needs (≥ 570),
+    # detect the actual CUDA version and reinstall a compatible PyTorch build.
+    if ! "${COMFYUI_PY}" -c "import torch; assert torch.cuda.is_available()" >/dev/null 2>&1; then
+        log "CUDA not available — checking driver version..."
+
+        # nvidia-smi reports "CUDA Version: 12.4" → we compute 12*1000+4*10 = 12040
+        CUDA_INT=$(nvidia-smi 2>/dev/null \
+            | grep -oP 'CUDA Version: \K[\d.]+' \
+            | awk -F. '{print $1*1000 + $2*10}' \
+            | head -1)
+
+        log "CUDA driver integer: ${CUDA_INT:-unknown}"
+
+        if [[ -n "${CUDA_INT}" ]] && [[ "${CUDA_INT}" -gt 0 ]] && [[ "${CUDA_INT}" -lt 12080 ]]; then
+            if   [[ "${CUDA_INT}" -ge 12060 ]]; then TORCH_CU="cu126"
+            elif [[ "${CUDA_INT}" -ge 12040 ]]; then TORCH_CU="cu124"
+            elif [[ "${CUDA_INT}" -ge 12010 ]]; then TORCH_CU="cu121"
+            else
+                log "WARNING: CUDA driver too old (${CUDA_INT}) — cannot install compatible PyTorch"
+                TORCH_CU=""
+            fi
+
+            if [[ -n "${TORCH_CU}" ]]; then
+                log "Installing PyTorch ${TORCH_CU} (driver supports CUDA ${CUDA_INT})..."
+                "${COMFYUI_PY}" -m pip install -q --no-cache-dir \
+                    torch torchvision torchaudio \
+                    --index-url "https://download.pytorch.org/whl/${TORCH_CU}" \
+                    && log "PyTorch ${TORCH_CU} installed OK" \
+                    || log "WARNING: PyTorch ${TORCH_CU} install failed"
+            fi
+        else
+            log "WARNING: CUDA unavailable but driver version unknown or ≥ 12.8 — skipping PyTorch fix"
+        fi
+    else
+        log "CUDA OK"
+    fi
+
     # mediapipe — install quietly, only if not already at correct version
     if ! "${COMFYUI_PY}" -c "import mediapipe; assert mediapipe.__version__ >= '0.10.13'" >/dev/null 2>&1; then
         log "Installing mediapipe>=0.10.13..."
